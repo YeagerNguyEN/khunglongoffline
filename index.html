@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
+    <title>Jump Over Blocks - Mobile Friendly</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #222;
+        color: #eee;
+        font-family: Arial, sans-serif;
+        user-select: none;
+        transition: background 1s ease;
+      }
+      body.light {
+        background: #87ceeb;
+        color: #222;
+      }
+      #info {
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 24px;
+        font-weight: bold;
+        z-index: 10;
+        user-select: none;
+      }
+      canvas {
+        display: block;
+        background: #333;
+        margin: 0 auto;
+        border-radius: 10px;
+        transition: background 1s ease;
+      }
+      body.light canvas {
+        background: #a0d8f7;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="info">Điểm: 0</div>
+    <canvas id="game"></canvas>
+
+    <script>
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const info = document.getElementById("info");
+
+      // Tỉ lệ so với màn hình ngang (landscape)
+      let vw = window.innerWidth;
+      let vh = window.innerHeight;
+
+      // Đặt kích thước canvas luôn vừa với màn hình nằm ngang (giữ tỉ lệ)
+      function resize() {
+        vw = window.innerWidth;
+        vh = window.innerHeight;
+
+        // Nếu màn hình đứng, bật cảnh báo hoặc chuyển canvas thành chiều ngang
+        if (vh > vw) {
+          // Đặt canvas ngang, chiều rộng = vw, chiều cao = 0.4vw (tương đương 40% chiều rộng)
+          canvas.width = vw;
+          canvas.height = vw * 0.4;
+        } else {
+          // Landscape: chiều rộng = vw, chiều cao = 0.4vw
+          canvas.width = vw;
+          canvas.height = vw * 0.4;
+        }
+
+        groundLevel = canvas.height - player.height;
+      }
+
+      window.addEventListener("resize", resize);
+
+      // Các biến game (sẽ dùng tỉ lệ theo canvas)
+      const player = {
+        x: 50,
+        y: 0,
+        width: 40,
+        height: 50,
+        velocityY: 0,
+        gravity: 1,
+        jumpForce: -15,
+        onGround: false,
+      };
+
+      let groundLevel = 0;
+
+      const obstacle = {
+        x: 0,
+        y: 0,
+        width: 30,
+        height: 50,
+        speed: 6,
+      };
+
+      let score = 0;
+      let gameOver = false;
+
+      // Mây
+      const clouds = [];
+      const cloudCount = 5;
+
+      function randomRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      function createClouds() {
+        clouds.length = 0;
+        for (let i = 0; i < cloudCount; i++) {
+          clouds.push({
+            x: randomRange(0, canvas.width),
+            y: randomRange(10, 60),
+            width: randomRange(50, 100),
+            height: randomRange(20, 40),
+            speed: randomRange(0.2, 0.6),
+          });
+        }
+      }
+
+      function scaleElements() {
+        // Tỉ lệ scale theo chiều rộng canvas (tính tỉ lệ dựa trên 500px chuẩn)
+        let scale = canvas.width / 500;
+
+        player.width = 40 * scale;
+        player.height = 50 * scale;
+        player.x = 50 * scale;
+
+        obstacle.width = 30 * scale;
+        obstacle.height = 50 * scale;
+        obstacle.speed = 6 * scale;
+
+        groundLevel = canvas.height - player.height;
+
+        // Reset vị trí player, obstacle y theo groundLevel
+        if (player.y > groundLevel) player.y = groundLevel;
+        obstacle.y = groundLevel;
+      }
+
+      function reset() {
+        scaleElements();
+        player.y = groundLevel;
+        player.velocityY = 0;
+        obstacle.x = canvas.width;
+        score = 0;
+        gameOver = false;
+        info.textContent = "Điểm: 0";
+        updateBackground();
+        createClouds();
+      }
+
+      function update() {
+        if (gameOver) return;
+
+        // Player gravity and movement
+        player.velocityY += player.gravity * (canvas.width / 500); // scale gravity
+        player.y += player.velocityY;
+
+        if (player.y > groundLevel) {
+          player.y = groundLevel;
+          player.velocityY = 0;
+          player.onGround = true;
+        } else {
+          player.onGround = false;
+        }
+
+        // Move obstacle
+        obstacle.x -= obstacle.speed;
+        if (obstacle.x + obstacle.width < 0) {
+          obstacle.x = canvas.width;
+          score++;
+          info.textContent = "Điểm: " + score;
+          updateBackground();
+        }
+
+        // Collision detection
+        if (
+          player.x < obstacle.x + obstacle.width &&
+          player.x + player.width > obstacle.x &&
+          player.y < obstacle.y + obstacle.height &&
+          player.y + player.height > obstacle.y
+        ) {
+          gameOver = true;
+          info.textContent += "  |  GAME OVER! Chạm màn hình để chơi lại";
+        }
+
+        // Move clouds
+        clouds.forEach((cloud) => {
+          cloud.x -= cloud.speed;
+          if (cloud.x + cloud.width < 0) {
+            cloud.x = canvas.width + randomRange(20, 100);
+            cloud.y = randomRange(10, 60);
+            cloud.width = randomRange(50, 100);
+            cloud.height = randomRange(20, 40);
+            cloud.speed = randomRange(0.2, 0.6);
+          }
+        });
+      }
+
+      function drawCactus(x, y, width, height) {
+        ctx.fillStyle = "#228B22";
+        ctx.fillRect(x, y, width, height);
+
+        ctx.strokeStyle = "#006400";
+        ctx.lineWidth = 2;
+
+        const spikeHeight = height * 0.16;
+        const spikeWidth = width * 0.1;
+        const spikeCount = Math.floor(height / (height / 5));
+
+        for (let i = 0; i < spikeCount; i++) {
+          let spikeY = y + i * (height / spikeCount) + spikeHeight / 2;
+
+          ctx.beginPath();
+          ctx.moveTo(x, spikeY);
+          ctx.lineTo(x - spikeWidth, spikeY - spikeHeight / 2);
+          ctx.lineTo(x - spikeWidth, spikeY + spikeHeight / 2);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(x + width, spikeY);
+          ctx.lineTo(x + width + spikeWidth, spikeY - spikeHeight / 2);
+          ctx.lineTo(x + width + spikeWidth, spikeY + spikeHeight / 2);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fill();
+        }
+      }
+
+      function drawDinosaur(x, y, width, height) {
+        ctx.fillStyle = "#4caf50";
+
+        // Body
+        ctx.fillRect(x, y + height / 4, width, (height * 3) / 4);
+
+        // Head (circle)
+        ctx.beginPath();
+        ctx.arc(
+          x + width,
+          y + height / 4,
+          height / 4,
+          Math.PI * 1.5,
+          Math.PI * 0.5,
+          false
+        );
+        ctx.fill();
+
+        // Legs
+        ctx.fillRect(x + width * 0.2, y + height, width * 0.15, height * 0.2);
+        ctx.fillRect(x + width * 0.6, y + height, width * 0.15, height * 0.2);
+
+        // Eye
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(
+          x + width + height / 6,
+          y + height / 4 - 5 * (canvas.width / 500),
+          5 * (canvas.width / 500),
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.fillStyle = "#000";
+        ctx.beginPath();
+        ctx.arc(
+          x + width + height / 6,
+          y + height / 4 - 5 * (canvas.width / 500),
+          2 * (canvas.width / 500),
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+
+      function drawCloud(cloud) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        const x = cloud.x;
+        const y = cloud.y;
+        const w = cloud.width;
+        const h = cloud.height;
+
+        ctx.beginPath();
+        ctx.ellipse(
+          x + w * 0.3,
+          y + h * 0.5,
+          w * 0.3,
+          h * 0.5,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.ellipse(
+          x + w * 0.6,
+          y + h * 0.5,
+          w * 0.3,
+          h * 0.5,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.ellipse(
+          x + w * 0.45,
+          y + h * 0.3,
+          w * 0.35,
+          h * 0.55,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        clouds.forEach(drawCloud);
+        drawDinosaur(player.x, player.y, player.width, player.height);
+        drawCactus(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+
+        // ground line
+        ctx.strokeStyle = "rgba(170, 170, 170, 0.6)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, groundLevel + player.height);
+        ctx.lineTo(canvas.width, groundLevel + player.height);
+        ctx.stroke();
+      }
+
+      function updateBackground() {
+        if (score >= 10) {
+          document.body.classList.add("light");
+        } else {
+          document.body.classList.remove("light");
+        }
+      }
+
+      function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Space") {
+          if (gameOver) {
+            reset();
+          } else if (player.onGround) {
+            player.velocityY = player.jumpForce * (canvas.width / 500);
+          }
+        }
+      });
+
+      // Thêm chạm màn hình để nhảy / reset
+      document.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        if (gameOver) {
+          reset();
+        } else if (player.onGround) {
+          player.velocityY = player.jumpForce * (canvas.width / 500);
+        }
+      });
+
+      resize();
+      reset();
+      gameLoop();
+    </script>
+  </body>
+</html>
