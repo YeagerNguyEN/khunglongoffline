@@ -4,26 +4,47 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no"
     />
-    <title>Jump Over Blocks - Mobile Friendly</title>
+    <title>Jump Over Blocks - Nâng cấp đồ họa 2.0</title>
     <style>
       html,
       body {
         margin: 0;
         padding: 0;
         height: 100%;
+        width: 100%;
         overflow: hidden;
-        background: #222;
+        background: #222; /* Mặc định là nền tối */
         color: #eee;
-        font-family: Arial, sans-serif;
+        font-family: "Press Start 2P", cursive; /* Thêm font retro nếu có */
         user-select: none;
         transition: background 1s ease;
+        display: flex;
+        justify-content: center;
+        align-items: center;
       }
-      body.light {
-        background: #87ceeb;
+      /* Import Google Font cho phong cách retro */
+      @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
+      body.day {
+        /* Đổi tên class từ light sang day để dễ hiểu hơn */
+        background: linear-gradient(
+          to bottom,
+          #87ceeb,
+          #a0d8f7
+        ); /* Màu trời ban ngày */
         color: #222;
       }
+      body.night {
+        background: linear-gradient(
+          to bottom,
+          #1a2a4a,
+          #0d1a2d
+        ); /* Màu trời ban đêm */
+        color: #eee;
+      }
+
       #info {
         position: fixed;
         top: 10px;
@@ -32,17 +53,17 @@
         font-size: 24px;
         font-weight: bold;
         z-index: 10;
-        user-select: none;
+        text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7); /* Đổ bóng mạnh hơn */
+        white-space: nowrap; /* Ngăn văn bản bị xuống dòng */
       }
       canvas {
         display: block;
-        background: #333;
-        margin: 0 auto;
-        border-radius: 10px;
+        width: 100vw;
+        height: 100vh;
+        /* background: #333; Màu nền sẽ do body quản lý */
         transition: background 1s ease;
-      }
-      body.light canvas {
-        background: #a0d8f7;
+        /* Thêm thuộc tính này để tránh ảnh hưởng từ text-shadow của info lên canvas */
+        filter: drop-shadow(0 0 0 transparent);
       }
     </style>
   </head>
@@ -55,133 +76,232 @@
       const ctx = canvas.getContext("2d");
       const info = document.getElementById("info");
 
-      // Tỉ lệ so với màn hình ngang (landscape)
-      let vw = window.innerWidth;
-      let vh = window.innerHeight;
+      // Kích thước game gốc để scaling (ví dụ: game được thiết kế ở 800x400)
+      const BASE_GAME_WIDTH = 800;
+      const BASE_GAME_HEIGHT = 400;
 
-      // Đặt kích thước canvas luôn vừa với màn hình nằm ngang (giữ tỉ lệ)
-      function resize() {
-        vw = window.innerWidth;
-        vh = window.innerHeight;
+      let currentScale = 1;
+      let score = 0;
+      let gameOver = false;
+      let frame = 0; // Để tạo animation đơn giản
 
-        // Nếu màn hình đứng, bật cảnh báo hoặc chuyển canvas thành chiều ngang
-        if (vh > vw) {
-          // Đặt canvas ngang, chiều rộng = vw, chiều cao = 0.4vw (tương đương 40% chiều rộng)
-          canvas.width = vw;
-          canvas.height = vw * 0.4;
-        } else {
-          // Landscape: chiều rộng = vw, chiều cao = 0.4vw
-          canvas.width = vw;
-          canvas.height = vw * 0.4;
-        }
+      // Hiệu ứng rung màn hình
+      let shakeIntensity = 0;
+      let shakeDuration = 0;
+      let shakeOffsetX = 0;
+      let shakeOffsetY = 0;
 
-        groundLevel = canvas.height - player.height;
-      }
-
-      window.addEventListener("resize", resize);
-
-      // Các biến game (sẽ dùng tỉ lệ theo canvas)
       const player = {
-        x: 50,
+        x: 0,
         y: 0,
-        width: 40,
-        height: 50,
+        width: 0,
+        height: 0,
         velocityY: 0,
-        gravity: 1,
-        jumpForce: -15,
+        baseGravity: 1.2, // Trọng lực nhẹ hơn một chút
+        baseJumpForce: -18, // Lực nhảy mạnh hơn
+        gravity: 0,
+        jumpForce: 0,
         onGround: false,
+        isDucking: false, // Thêm trạng thái cúi người
+        legAnimationOffset: 0, // Để tạo animation chân
       };
-
-      let groundLevel = 0;
 
       const obstacle = {
         x: 0,
         y: 0,
-        width: 30,
-        height: 50,
-        speed: 6,
+        width: 0,
+        height: 0,
+        baseSpeed: 7, // Tốc độ nhanh hơn
+        speed: 0,
       };
 
-      let score = 0;
-      let gameOver = false;
-
-      // Mây
       const clouds = [];
       const cloudCount = 5;
+      const groundHumps = []; // Để vẽ đường mặt đất lồi lõm
+
+      // Các màu sắc mới
+      const COLORS = {
+        dinoGreen: "#5cb85c",
+        dinoDarkGreen: "#449d44",
+        cactusGreen: "#2e8b57",
+        cactusDarkGreen: "#1a522d",
+        eyeWhite: "#ffffff",
+        eyePupil: "#000000",
+        ground: "#a0a0a0",
+        groundShadow: "#808080",
+        cloud: "rgba(255, 255, 255, 0.9)",
+        sun: "#ffda63",
+        moon: "#e0e0e0",
+        star: "rgba(255, 255, 255, 0.8)",
+        dinoHighlight: "#7cd97c", // Màu sáng hơn cho khủng long
+      };
 
       function randomRange(min, max) {
         return Math.random() * (max - min) + min;
       }
 
+      function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const widthRatio = canvas.width / BASE_GAME_WIDTH;
+        const heightRatio = canvas.height / BASE_GAME_HEIGHT;
+
+        // Chọn tỉ lệ scale nhỏ hơn để đảm bảo game không tràn ra ngoài màn hình
+        // và giữ được tỉ lệ khung hình của các đối tượng
+        currentScale = Math.min(widthRatio, heightRatio);
+
+        scaleElements();
+        // Cần cập nhật lại vị trí obstacle khi resize để tránh nó bị kẹt
+        obstacle.x = canvas.width;
+      }
+
+      function scaleElements() {
+        // Áp dụng tỉ lệ scale cho tất cả các đối tượng game
+        player.width = 40 * currentScale;
+        player.height = 50 * currentScale;
+        player.x = 50 * currentScale;
+
+        player.gravity = player.baseGravity * currentScale;
+        player.jumpForce = player.baseJumpForce * currentScale;
+
+        obstacle.width = 30 * currentScale;
+        obstacle.height = 50 * currentScale;
+        obstacle.speed = obstacle.baseSpeed * currentScale;
+
+        // Đặt vị trí Y của player và obstacle trên mặt đất mới
+        player.y = canvas.height - player.height;
+        obstacle.y = canvas.height - obstacle.height;
+
+        // Đảm bảo player không bị kẹt dưới đất sau khi resize
+        if (player.y > canvas.height - player.height) {
+          player.y = canvas.height - player.height;
+          player.velocityY = 0;
+          player.onGround = true;
+        }
+
+        // Cập nhật đám mây nếu đã có
+        clouds.forEach((cloud) => {
+          cloud.x = cloud.baseX * currentScale;
+          cloud.y = cloud.baseY * currentScale;
+          cloud.width = cloud.baseWidth * currentScale;
+          cloud.height = cloud.baseHeight * currentScale;
+          cloud.speed = cloud.baseSpeed * currentScale;
+        });
+
+        // Tạo lại ground humps nếu cần (khi resize)
+        createGroundHumps();
+      }
+
       function createClouds() {
         clouds.length = 0;
         for (let i = 0; i < cloudCount; i++) {
+          const baseW = randomRange(80, 150);
+          const baseH = randomRange(30, 60);
+          const baseSpeed = randomRange(0.3, 0.8);
           clouds.push({
-            x: randomRange(0, canvas.width),
-            y: randomRange(10, 60),
-            width: randomRange(50, 100),
-            height: randomRange(20, 40),
-            speed: randomRange(0.2, 0.6),
+            baseX: randomRange(0, BASE_GAME_WIDTH * 1.5),
+            baseY: randomRange(20, BASE_GAME_HEIGHT * 0.4),
+            baseWidth: baseW,
+            baseHeight: baseH,
+            baseSpeed: baseSpeed,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            speed: 0,
+            parts: [], // Để vẽ các phần của đám mây
+          });
+        }
+        scaleElements(); // Cập nhật kích thước và vị trí đám mây sau khi tạo
+      }
+
+      function createGroundHumps() {
+        groundHumps.length = 0;
+        const numHumps = Math.floor(canvas.width / (50 * currentScale)); // Khoảng cách giữa các gờ
+        for (let i = 0; i <= numHumps + 2; i++) {
+          // Thêm 2 điểm để đảm bảo vẽ hết màn hình
+          groundHumps.push({
+            x: i * (50 * currentScale),
+            heightOffset: randomRange(0, 8 * currentScale), // Độ cao ngẫu nhiên
           });
         }
       }
 
-      function scaleElements() {
-        // Tỉ lệ scale theo chiều rộng canvas (tính tỉ lệ dựa trên 500px chuẩn)
-        let scale = canvas.width / 500;
-
-        player.width = 40 * scale;
-        player.height = 50 * scale;
-        player.x = 50 * scale;
-
-        obstacle.width = 30 * scale;
-        obstacle.height = 50 * scale;
-        obstacle.speed = 6 * scale;
-
-        groundLevel = canvas.height - player.height;
-
-        // Reset vị trí player, obstacle y theo groundLevel
-        if (player.y > groundLevel) player.y = groundLevel;
-        obstacle.y = groundLevel;
-      }
-
       function reset() {
-        scaleElements();
-        player.y = groundLevel;
-        player.velocityY = 0;
-        obstacle.x = canvas.width;
-        score = 0;
         gameOver = false;
+        score = 0;
         info.textContent = "Điểm: 0";
         updateBackground();
-        createClouds();
+        shakeIntensity = 0; // Đảm bảo không rung khi reset
+
+        player.velocityY = 0;
+        player.onGround = true;
+        player.y = canvas.height - player.height; // Đặt lại vị trí Y
+        obstacle.x = canvas.width; // Đặt vật cản ra ngoài màn hình
+        player.isDucking = false; // Đảm bảo không cúi khi reset
+
+        createClouds(); // Tạo lại đám mây
+        createGroundHumps(); // Tạo lại các điểm gờ mặt đất
+      }
+
+      function updateBackground() {
+        if (score < 10) {
+          document.body.className = "day"; // Ban ngày
+        } else if (score < 20) {
+          document.body.className = "night"; // Ban đêm
+        } else {
+          // Tùy chọn: Chuyển lại ban ngày hoặc thay đổi màu khác
+          document.body.className = "day";
+        }
       }
 
       function update() {
         if (gameOver) return;
 
-        // Player gravity and movement
-        player.velocityY += player.gravity * (canvas.width / 500); // scale gravity
+        frame++; // Tăng frame để tạo animation
+
+        // Cập nhật rung màn hình
+        if (shakeDuration > 0) {
+          shakeOffsetX = randomRange(-shakeIntensity, shakeIntensity);
+          shakeOffsetY = randomRange(-shakeIntensity, shakeIntensity);
+          shakeDuration--;
+        } else {
+          shakeOffsetX = 0;
+          shakeOffsetY = 0;
+        }
+
+        // Cập nhật player
+        player.velocityY += player.gravity;
         player.y += player.velocityY;
 
-        if (player.y > groundLevel) {
-          player.y = groundLevel;
+        if (player.y >= canvas.height - player.height) {
+          player.y = canvas.height - player.height;
           player.velocityY = 0;
           player.onGround = true;
         } else {
           player.onGround = false;
         }
 
-        // Move obstacle
+        // Animation chân khi chạy
+        if (player.onGround && !player.isDucking) {
+          player.legAnimationOffset = Math.sin(frame * 0.1) * 2 * currentScale; // Chân nhấc lên/hạ xuống
+        } else {
+          player.legAnimationOffset = 0;
+        }
+
+        // Cập nhật obstacle
         obstacle.x -= obstacle.speed;
         if (obstacle.x + obstacle.width < 0) {
           obstacle.x = canvas.width;
           score++;
           info.textContent = "Điểm: " + score;
           updateBackground();
+          obstacle.speed =
+            obstacle.baseSpeed * currentScale * (1 + score * 0.05); // Tăng tốc độ theo điểm
         }
 
-        // Collision detection
+        // Kiểm tra va chạm
         if (
           player.x < obstacle.x + obstacle.width &&
           player.x + player.width > obstacle.x &&
@@ -189,159 +309,587 @@
           player.y + player.height > obstacle.y
         ) {
           gameOver = true;
-          info.textContent += "  |  GAME OVER! Chạm màn hình để chơi lại";
+          info.textContent +=
+            "  |  GAME OVER! Chạm hoặc nhấn Space để chơi lại";
+          shakeIntensity = 5 * currentScale; // Bắt đầu rung màn hình khi game over
+          shakeDuration = 60; // Rung trong 1 giây (60 frames)
         }
 
-        // Move clouds
+        // Cập nhật đám mây
         clouds.forEach((cloud) => {
           cloud.x -= cloud.speed;
           if (cloud.x + cloud.width < 0) {
-            cloud.x = canvas.width + randomRange(20, 100);
-            cloud.y = randomRange(10, 60);
-            cloud.width = randomRange(50, 100);
-            cloud.height = randomRange(20, 40);
-            cloud.speed = randomRange(0.2, 0.6);
+            cloud.x = canvas.width + randomRange(20, 100) * currentScale;
+            cloud.y = randomRange(10, BASE_GAME_HEIGHT * 0.4) * currentScale;
+            cloud.width = randomRange(80, 150) * currentScale;
+            cloud.height = randomRange(30, 60) * currentScale;
+            cloud.speed = randomRange(0.3, 0.8) * currentScale;
           }
         });
       }
 
-      function drawCactus(x, y, width, height) {
-        ctx.fillStyle = "#228B22";
-        ctx.fillRect(x, y, width, height);
+      // --- Hàm vẽ các đối tượng ---
+      function drawCloud(cloud) {
+        ctx.fillStyle = COLORS.cloud;
+        ctx.beginPath();
+        // Các hình tròn chồng lấn để tạo hình dạng mây
+        ctx.arc(
+          cloud.x + cloud.width * 0.2,
+          cloud.y + cloud.height * 0.5,
+          cloud.width * 0.3,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          cloud.x + cloud.width * 0.5,
+          cloud.y + cloud.height * 0.3,
+          cloud.width * 0.4,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          cloud.x + cloud.width * 0.8,
+          cloud.y + cloud.height * 0.5,
+          cloud.width * 0.35,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
 
-        ctx.strokeStyle = "#006400";
-        ctx.lineWidth = 2;
-
-        const spikeHeight = height * 0.16;
-        const spikeWidth = width * 0.1;
-        const spikeCount = Math.floor(height / (height / 5));
-
-        for (let i = 0; i < spikeCount; i++) {
-          let spikeY = y + i * (height / spikeCount) + spikeHeight / 2;
-
-          ctx.beginPath();
-          ctx.moveTo(x, spikeY);
-          ctx.lineTo(x - spikeWidth, spikeY - spikeHeight / 2);
-          ctx.lineTo(x - spikeWidth, spikeY + spikeHeight / 2);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.moveTo(x + width, spikeY);
-          ctx.lineTo(x + width + spikeWidth, spikeY - spikeHeight / 2);
-          ctx.lineTo(x + width + spikeWidth, spikeY + spikeHeight / 2);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.fill();
-        }
+        // Đổ bóng nhẹ cho mây
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.beginPath();
+        ctx.arc(
+          cloud.x + cloud.width * 0.2,
+          cloud.y + cloud.height * 0.5 + 5 * currentScale,
+          cloud.width * 0.25,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          cloud.x + cloud.width * 0.5,
+          cloud.y + cloud.height * 0.3 + 5 * currentScale,
+          cloud.width * 0.35,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          cloud.x + cloud.width * 0.8,
+          cloud.y + cloud.height * 0.5 + 5 * currentScale,
+          cloud.width * 0.3,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
       }
 
       function drawDinosaur(x, y, width, height) {
-        ctx.fillStyle = "#4caf50";
+        // Áp dụng offset animation chân
+        const legYOffset = player.onGround ? player.legAnimationOffset : 0;
 
-        // Body
-        ctx.fillRect(x, y + height / 4, width, (height * 3) / 4);
+        ctx.fillStyle = COLORS.dinoGreen;
 
-        // Head (circle)
+        // Thân chính (sử dụng bezier curves để mượt mà hơn)
         ctx.beginPath();
-        ctx.arc(
-          x + width,
-          y + height / 4,
-          height / 4,
-          Math.PI * 1.5,
-          Math.PI * 0.5,
-          false
+        ctx.moveTo(x + width * 0.1, y + height * 0.7); // Đuôi dưới
+        ctx.bezierCurveTo(
+          x - width * 0.1,
+          y + height * 0.5, // Điểm điều khiển
+          x,
+          y + height * 0.2, // Điểm điều khiển
+          x + width * 0.8,
+          y + height * 0.2 // Kết thúc lưng
+        );
+        ctx.lineTo(x + width * 0.9, y + height * 0.1); // Cổ
+        ctx.bezierCurveTo(
+          x + width * 1.1,
+          y + height * 0.1, // Điểm điều khiển đầu
+          x + width * 1.1,
+          y + height * 0.4, // Điểm điều khiển đầu
+          x + width * 0.9,
+          y + height * 0.5 // Kết thúc đầu
+        );
+        ctx.bezierCurveTo(
+          x + width * 0.7,
+          y + height * 0.8, // Điểm điều khiển bụng
+          x + width * 0.3,
+          y + height * 0.9, // Điểm điều khiển bụng
+          x + width * 0.1,
+          y + height * 0.7 // Trở về đuôi dưới
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Đổ bóng thân (phần bụng)
+        ctx.fillStyle = COLORS.dinoDarkGreen;
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.2, y + height * 0.8);
+        ctx.bezierCurveTo(
+          x + width * 0.3,
+          y + height * 0.9,
+          x + width * 0.7,
+          y + height * 0.9,
+          x + width * 0.8,
+          y + height * 0.8
+        );
+        ctx.lineTo(x + width * 0.7, y + height * 0.7);
+        ctx.bezierCurveTo(
+          x + width * 0.5,
+          y + height * 0.75,
+          x + width * 0.4,
+          y + height * 0.75,
+          x + width * 0.2,
+          y + height * 0.7
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Điểm sáng (highlight) trên lưng
+        ctx.fillStyle = COLORS.dinoHighlight;
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.2, y + height * 0.3);
+        ctx.bezierCurveTo(
+          x + width * 0.3,
+          y + height * 0.2,
+          x + width * 0.7,
+          y + height * 0.2,
+          x + width * 0.8,
+          y + height * 0.3
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Chân
+        const footHeight = height * 0.2;
+        const footWidth = width * 0.15;
+        const footRadius = 3 * currentScale; // Bo tròn chân
+
+        // Chân trước
+        ctx.fillStyle = COLORS.dinoGreen;
+        ctx.beginPath();
+        ctx.roundRect(
+          x + width * 0.4,
+          y + height - footHeight + legYOffset,
+          footWidth,
+          footHeight,
+          footRadius
         );
         ctx.fill();
 
-        // Legs
-        ctx.fillRect(x + width * 0.2, y + height, width * 0.15, height * 0.2);
-        ctx.fillRect(x + width * 0.6, y + height, width * 0.15, height * 0.2);
+        // Chân sau
+        ctx.beginPath();
+        ctx.roundRect(
+          x + width * 0.7,
+          y + height - footHeight - legYOffset,
+          footWidth,
+          footHeight,
+          footRadius
+        );
+        ctx.fill();
 
-        // Eye
+        // Đổ bóng chân
+        ctx.fillStyle = COLORS.dinoDarkGreen;
+        ctx.beginPath();
+        ctx.roundRect(
+          x + width * 0.4 + footWidth * 0.7,
+          y + height - footHeight + legYOffset,
+          footWidth * 0.3,
+          footHeight,
+          footRadius
+        );
+        ctx.fill();
+        ctx.beginPath();
+        ctx.roundRect(
+          x + width * 0.7 + footWidth * 0.7,
+          y + height - footHeight - legYOffset,
+          footWidth * 0.3,
+          footHeight,
+          footRadius
+        );
+        ctx.fill();
+
+        // Móng chân
+        ctx.fillStyle = COLORS.eyePupil;
+        const clawSize = 3 * currentScale;
+        ctx.beginPath();
+        ctx.arc(
+          x + width * 0.4 + footWidth * 0.2,
+          y + height + legYOffset,
+          clawSize,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          x + width * 0.4 + footWidth * 0.8,
+          y + height + legYOffset,
+          clawSize,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          x + width * 0.7 + footWidth * 0.2,
+          y + height - legYOffset,
+          clawSize,
+          0,
+          Math.PI * 2
+        );
+        ctx.arc(
+          x + width * 0.7 + footWidth * 0.8,
+          y + height - legYOffset,
+          clawSize,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+
+        // Mắt
+        ctx.fillStyle = COLORS.eyeWhite;
+        ctx.beginPath();
+        ctx.arc(
+          x + width * 0.95,
+          y + height * 0.2,
+          5 * currentScale,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.fillStyle = COLORS.eyePupil;
+        ctx.beginPath();
+        ctx.arc(
+          x + width * 0.95 + 1 * currentScale,
+          y + height * 0.2 + 1 * currentScale,
+          2 * currentScale,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        // Chấm sáng mắt
         ctx.fillStyle = "#fff";
         ctx.beginPath();
         ctx.arc(
-          x + width + height / 6,
-          y + height / 4 - 5 * (canvas.width / 500),
-          5 * (canvas.width / 500),
+          x + width * 0.95 + 3 * currentScale,
+          y + height * 0.2 - 3 * currentScale,
+          1 * currentScale,
           0,
           Math.PI * 2
         );
         ctx.fill();
-        ctx.fillStyle = "#000";
+
+        // Miệng
+        ctx.strokeStyle = COLORS.dinoDarkGreen;
+        ctx.lineWidth = 2 * currentScale;
         ctx.beginPath();
-        ctx.arc(
-          x + width + height / 6,
-          y + height / 4 - 5 * (canvas.width / 500),
-          2 * (canvas.width / 500),
-          0,
-          Math.PI * 2
-        );
-        ctx.fill();
+        ctx.moveTo(x + width * 0.9, y + height * 0.3);
+        ctx.lineTo(x + width * 1.05, y + height * 0.35);
+        ctx.stroke();
+
+        // Cúi người (nếu cần)
+        if (player.isDucking) {
+          // Có thể vẽ một hình dạng cúi người khác ở đây
+        }
       }
 
-      function drawCloud(cloud) {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-        const x = cloud.x;
-        const y = cloud.y;
-        const w = cloud.width;
-        const h = cloud.height;
+      function drawCactus(x, y, width, height) {
+        ctx.fillStyle = COLORS.cactusGreen;
 
+        // Thân chính (hơi phình ở dưới)
         ctx.beginPath();
-        ctx.ellipse(
-          x + w * 0.3,
-          y + h * 0.5,
-          w * 0.3,
-          h * 0.5,
-          0,
-          0,
-          Math.PI * 2
+        ctx.moveTo(x + width * 0.3, y + height);
+        ctx.lineTo(x, y + height * 0.2); // Điểm dưới trái
+        ctx.bezierCurveTo(
+          x + width * 0.1,
+          y - height * 0.1, // Điểm điều khiển trên trái
+          x + width * 0.9,
+          y - height * 0.1, // Điểm điều khiển trên phải
+          x + width,
+          y + height * 0.2 // Điểm dưới phải
         );
-        ctx.ellipse(
-          x + w * 0.6,
-          y + h * 0.5,
-          w * 0.3,
-          h * 0.5,
-          0,
-          0,
-          Math.PI * 2
-        );
-        ctx.ellipse(
-          x + w * 0.45,
-          y + h * 0.3,
-          w * 0.35,
-          h * 0.55,
-          0,
-          0,
-          Math.PI * 2
-        );
+        ctx.lineTo(x + width * 0.7, y + height);
+        ctx.closePath();
         ctx.fill();
+
+        // Đổ bóng thân chính
+        ctx.fillStyle = COLORS.cactusDarkGreen;
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.6, y + height);
+        ctx.lineTo(x + width * 0.9, y + height * 0.2);
+        ctx.bezierCurveTo(
+          x + width * 0.85,
+          y - height * 0.05,
+          x + width * 0.95,
+          y + height * 0.05,
+          x + width * 0.9,
+          y + height * 0.2
+        );
+        ctx.lineTo(x + width * 0.7, y + height);
+        ctx.closePath();
+        ctx.fill();
+
+        // Nhánh xương rồng
+        const armWidth = width * 0.5;
+        const armHeight = height * 0.25;
+        const armThickness = width * 0.2;
+
+        // Nhánh trái
+        ctx.fillStyle = COLORS.cactusGreen;
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.3, y + height * 0.5); // Gốc nhánh từ thân
+        ctx.bezierCurveTo(
+          x - width * 0.1,
+          y + height * 0.4, // Điểm điều khiển ngang
+          x - width * 0.1,
+          y + height * 0.2, // Điểm điều khiển cong lên
+          x - width * 0.2,
+          y + height * 0.1 // Đỉnh nhánh ngang
+        );
+        ctx.lineTo(x - width * 0.2 + armThickness, y + height * 0.1); // Đỉnh nhánh ngang (bên phải)
+        ctx.bezierCurveTo(
+          x + armThickness - width * 0.1,
+          y + height * 0.3,
+          x + armThickness - width * 0.1,
+          y + height * 0.5,
+          x + width * 0.3 + armThickness,
+          y + height * 0.5 // Gốc nhánh (bên phải)
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = COLORS.cactusDarkGreen; // Đổ bóng nhánh trái
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.3 + armThickness * 0.7, y + height * 0.5);
+        ctx.bezierCurveTo(
+          x + armThickness * 0.7 - width * 0.1,
+          y + height * 0.4,
+          x + armThickness * 0.7 - width * 0.1,
+          y + height * 0.2,
+          x + armThickness * 0.7 - width * 0.2,
+          y + height * 0.1
+        );
+        ctx.lineTo(x + armThickness - width * 0.2, y + height * 0.1);
+        ctx.lineTo(x + armThickness - width * 0.1, y + height * 0.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Nhánh phải (tương tự)
+        ctx.fillStyle = COLORS.cactusGreen;
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.7, y + height * 0.6); // Gốc nhánh từ thân
+        ctx.bezierCurveTo(
+          x + width * 1.1,
+          y + height * 0.5,
+          x + width * 1.1,
+          y + height * 0.3,
+          x + width * 1.2,
+          y + height * 0.2 // Đỉnh nhánh ngang
+        );
+        ctx.lineTo(x + width * 1.2 - armThickness, y + height * 0.2);
+        ctx.bezierCurveTo(
+          x + width * 0.9 - armThickness,
+          y + height * 0.4,
+          x + width * 0.9 - armThickness,
+          y + height * 0.6,
+          x + width * 0.7 - armThickness,
+          y + height * 0.6 // Gốc nhánh (bên trái)
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = COLORS.cactusDarkGreen; // Đổ bóng nhánh phải
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.7 - armThickness * 0.7, y + height * 0.6);
+        ctx.bezierCurveTo(
+          x + width * 1.1 - armThickness * 0.7,
+          y + height * 0.5,
+          x + width * 1.1 - armThickness * 0.7,
+          y + height * 0.3,
+          x + width * 1.2 - armThickness * 0.7,
+          y + height * 0.2
+        );
+        ctx.lineTo(x + width * 1.2 - armThickness, y + height * 0.2);
+        ctx.lineTo(x + width * 0.7 - armThickness, y + height * 0.6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Gai (hình tam giác nhỏ)
+        ctx.fillStyle = COLORS.cactusDarkGreen;
+        const spikeSize = 4 * currentScale;
+        const spikeSpacing = 10 * currentScale;
+        const numSpikes = Math.floor(height / spikeSpacing);
+
+        for (let i = 0; i < numSpikes; i++) {
+          const spikeY =
+            y + i * spikeSpacing + randomRange(-spikeSize, spikeSize);
+          // Gai trên thân chính
+          ctx.beginPath();
+          ctx.moveTo(x + width * 0.2, spikeY);
+          ctx.lineTo(x + width * 0.2 - spikeSize, spikeY - spikeSize);
+          ctx.lineTo(x + width * 0.2 - spikeSize, spikeY + spikeSize);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(x + width * 0.8, spikeY);
+          ctx.lineTo(x + width * 0.8 + spikeSize, spikeY - spikeSize);
+          ctx.lineTo(x + width * 0.8 + spikeSize, spikeY + spikeSize);
+          ctx.closePath();
+          ctx.fill();
+
+          // Gai trên nhánh trái
+          ctx.beginPath();
+          ctx.moveTo(
+            x - width * 0.2 + armThickness * 0.5,
+            y + height * 0.1 + i * spikeSpacing * 0.5
+          );
+          ctx.lineTo(
+            x - width * 0.2 + armThickness * 0.5 - spikeSize,
+            y + height * 0.1 + i * spikeSpacing * 0.5 - spikeSize
+          );
+          ctx.lineTo(
+            x - width * 0.2 + armThickness * 0.5 - spikeSize,
+            y + height * 0.1 + i * spikeSpacing * 0.5 + spikeSize
+          );
+          ctx.closePath();
+          ctx.fill();
+
+          // Gai trên nhánh phải
+          ctx.beginPath();
+          ctx.moveTo(
+            x + width * 1.2 - armThickness * 0.5,
+            y + height * 0.2 + i * spikeSpacing * 0.5
+          );
+          ctx.lineTo(
+            x + width * 1.2 - armThickness * 0.5 + spikeSize,
+            y + height * 0.2 + i * spikeSpacing * 0.5 - spikeSize
+          );
+          ctx.lineTo(
+            x + width * 1.2 - armThickness * 0.5 + spikeSize,
+            y + height * 0.2 + i * spikeSpacing * 0.5 + spikeSize
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      function drawGround() {
+        ctx.fillStyle = COLORS.ground;
+        ctx.fillRect(
+          0,
+          canvas.height - 20 * currentScale,
+          canvas.width,
+          20 * currentScale
+        ); // Nền đất
+
+        // Vẽ các gờ lồi lõm trên mặt đất
+        ctx.strokeStyle = COLORS.groundShadow;
+        ctx.lineWidth = 2 * currentScale;
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height - 20 * currentScale); // Bắt đầu từ mép trái
+
+        for (let i = 0; i < groundHumps.length; i++) {
+          const hump = groundHumps[i];
+          const nextHump = groundHumps[i + 1];
+
+          if (nextHump) {
+            // Sử dụng quadraticCurveTo để tạo đường cong mượt
+            ctx.quadraticCurveTo(
+              hump.x,
+              canvas.height - 20 * currentScale - hump.heightOffset, // Điểm điều khiển
+              nextHump.x,
+              canvas.height - 20 * currentScale - nextHump.heightOffset // Điểm kết thúc
+            );
+          } else {
+            // Điểm cuối cùng, chỉ cần vẽ đường thẳng ra mép canvas
+            ctx.lineTo(
+              hump.x,
+              canvas.height - 20 * currentScale - hump.heightOffset
+            );
+          }
+        }
+        ctx.lineTo(canvas.width, canvas.height - 20 * currentScale); // Đảm bảo nối đến cuối canvas
+        ctx.stroke();
+
+        // Vẽ các chấm đá/sỏi trên mặt đất
+        ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+        for (let i = 0; i < 50; i++) {
+          // 50 viên sỏi
+          ctx.beginPath();
+          ctx.arc(
+            randomRange(0, canvas.width),
+            canvas.height - randomRange(5 * currentScale, 18 * currentScale),
+            1 * currentScale,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+      }
+
+      function drawSkyObjects() {
+        if (document.body.classList.contains("day")) {
+          // Mặt trời
+          ctx.fillStyle = COLORS.sun;
+          ctx.beginPath();
+          ctx.arc(
+            canvas.width * 0.9,
+            canvas.height * 0.15,
+            30 * currentScale,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        } else if (document.body.classList.contains("night")) {
+          // Mặt trăng
+          ctx.fillStyle = COLORS.moon;
+          ctx.beginPath();
+          ctx.arc(
+            canvas.width * 0.9,
+            canvas.height * 0.15,
+            25 * currentScale,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+          ctx.globalCompositeOperation = "destination-out"; // Để tạo hình lưỡi liềm
+          ctx.beginPath();
+          ctx.arc(
+            canvas.width * 0.88 - 5 * currentScale,
+            canvas.height * 0.13,
+            25 * currentScale,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+          ctx.globalCompositeOperation = "source-over"; // Khôi phục chế độ hòa trộn
+
+          // Các ngôi sao
+          ctx.fillStyle = COLORS.star;
+          for (let i = 0; i < 50; i++) {
+            const starX = randomRange(0, canvas.width);
+            const starY = randomRange(0, canvas.height * 0.6);
+            const starSize = randomRange(0.5, 2) * currentScale;
+            ctx.globalAlpha = Math.abs(Math.sin(frame * 0.05 + i)) * 0.5 + 0.5; // Nhấp nháy
+            ctx.beginPath();
+            ctx.arc(starX, starY, starSize, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.globalAlpha = 1; // Đặt lại alpha
+        }
       }
 
       function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Xóa toàn bộ canvas
 
+        // Áp dụng rung màn hình
+        ctx.save(); // Lưu trạng thái hiện tại
+        ctx.translate(shakeOffsetX, shakeOffsetY); // Dịch chuyển theo rung
+
+        drawSkyObjects();
         clouds.forEach(drawCloud);
+        drawGround(); // Vẽ mặt đất trước
         drawDinosaur(player.x, player.y, player.width, player.height);
         drawCactus(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
 
-        // ground line
-        ctx.strokeStyle = "rgba(170, 170, 170, 0.6)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, groundLevel + player.height);
-        ctx.lineTo(canvas.width, groundLevel + player.height);
-        ctx.stroke();
-      }
-
-      function updateBackground() {
-        if (score >= 10) {
-          document.body.classList.add("light");
-        } else {
-          document.body.classList.remove("light");
-        }
+        ctx.restore(); // Khôi phục trạng thái, bỏ rung màn hình
       }
 
       function gameLoop() {
@@ -350,28 +898,56 @@
         requestAnimationFrame(gameLoop);
       }
 
-      document.addEventListener("keydown", (e) => {
+      // --- Xử lý sự kiện nhảy ---
+      function handleJump() {
+        if (gameOver) {
+          reset();
+        } else if (player.onGround) {
+          player.velocityY = player.jumpForce;
+          player.onGround = false; // Đảm bảo không thể nhảy liên tục khi đang nhảy
+        }
+      }
+
+      // Xử lý sự kiện chạm màn hình (cho di động)
+      canvas.addEventListener("touchstart", (e) => {
+        e.preventDefault(); // Ngăn chặn hành vi mặc định như cuộn trang
+        handleJump();
+      });
+
+      // Xử lý sự kiện nhấn phím (cho PC)
+      window.addEventListener("keydown", (e) => {
         if (e.code === "Space") {
-          if (gameOver) {
-            reset();
-          } else if (player.onGround) {
-            player.velocityY = player.jumpForce * (canvas.width / 500);
+          e.preventDefault();
+          handleJump();
+        }
+        // Thêm cúi người (ví dụ: phím xuống hoặc S) - tính năng tùy chọn
+        if (e.code === "ArrowDown" || e.code === "KeyS") {
+          if (!player.isDucking && player.onGround) {
+            // Chỉ cúi khi đang ở trên mặt đất
+            player.isDucking = true;
+            // Điều chỉnh chiều cao và vị trí y khi cúi
+            player.height = 30 * currentScale; // Chiều cao thấp hơn
+            player.y = canvas.height - player.height; // Đặt lại y cho khớp
           }
         }
       });
 
-      // Thêm chạm màn hình để nhảy / reset
-      document.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        if (gameOver) {
-          reset();
-        } else if (player.onGround) {
-          player.velocityY = player.jumpForce * (canvas.width / 500);
+      window.addEventListener("keyup", (e) => {
+        if (e.code === "ArrowDown" || e.code === "KeyS") {
+          if (player.isDucking) {
+            player.isDucking = false;
+            player.height = 50 * currentScale; // trả về chiều cao ban đầu
+            player.y = canvas.height - player.height; // Đặt lại y cho khớp
+          }
         }
       });
 
-      resize();
-      reset();
+      // Xử lý sự kiện thay đổi kích thước cửa sổ
+      window.addEventListener("resize", resize);
+
+      // Khởi tạo game
+      resize(); // Thiết lập kích thước canvas và scale ban đầu
+      reset(); // Bắt đầu game
       gameLoop();
     </script>
   </body>
